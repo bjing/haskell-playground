@@ -16,7 +16,15 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Lib
+                     , DynamoDBTest
   build-depends:       base >= 4.7 && < 5
+                     , text
+                     , bytestring
+                     , conduit
+                     , lens
+                     , unordered-containers
+                     , amazonka-dynamodb
+                     , amazonka
   default-language:    Haskell2010
 
 executable haskell-playground-exe
@@ -29,6 +37,8 @@ executable haskell-playground-exe
                      , text
                      , bytestring
                      , http-conduit
+                     , amazonka-dynamodb
+                     , amazonka-core
   default-language:    Haskell2010
 
 test-suite haskell-playground-test
