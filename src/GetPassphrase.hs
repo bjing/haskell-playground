@@ -19,3 +19,7 @@ askPassphrase = do
         Just value -> putStrLn "Storing in database..." -- do stuff
         Nothing -> putStrLn "Passphrase invalid."
 
+main :: IO ()
+main = do
+    s <- getPassphrase
+    putStrLn s
