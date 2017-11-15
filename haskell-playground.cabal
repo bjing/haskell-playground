@@ -19,6 +19,7 @@ library
                      , PostgresMigrationTest
                      , PostgresTest
                     --  , PersistentTest
+                     , ValidationTest
                      , Model
   build-depends:       base >= 4.7 && < 5
                      , text
@@ -40,6 +41,7 @@ library
                      , monad-logger
                      , wai-extra
                      , scotty
+                     , validation
   default-language:    Haskell2010
 
 executable haskell-playground-exe
