@@ -3,6 +3,8 @@ module StateTest where
 import Control.Monad.State
 import Control.Monad
 import System.Random
+import Data.Functor.Identity
+import Control.Applicative (liftA3, liftA)
 
 type Stack = [Int]
 
@@ -65,8 +67,17 @@ threeCoins = do
   c <- randomSt
   return (a, b, c)
 
-threeCoins' :: State StdGen (Bool, Bool, Bool)
-threeCoins' = replicateM 3 randomSt
+threeCoins1 :: (Random a) => StateT StdGen Data.Functor.Identity.Identity [a]
+threeCoins1 = replicateM 3 randomSt
+
+threeCoins2 :: StateT StdGen Maybe (Bool, Bool, Bool)
+threeCoins2 = undefined
+
+threeCoins3 :: State StdGen (Bool, Bool, Bool)
+threeCoins3 = (,,) <$> randomSt <*> randomSt <*> randomSt
+
+
+
 
 -- newtype State s a = State { runState :: s -> (a,s) }
 
