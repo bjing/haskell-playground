@@ -81,15 +81,15 @@ maybeTest = do
 
 
 
-type Env = (Maybe String, Maybe String, Maybe String)
-readUserName2 :: MaybeT (ReaderT Env IO) String
-readUserName2 = MaybeT $ do
-    (maybeOldUser, _, _) <- ask
-    case maybeOldUser of
-        Just str -> return str
-        Nothing -> do
-            -- lift allows normal IO functions from inside ReaderT Env IO!
-            input <- lift getLine
-            if length input > 5
-            then return (Just input)
-            else return Nothing
+-- type Env = (Maybe String, Maybe String, Maybe String)
+-- readUserName2 :: MaybeT (ReaderT Env IO) String
+-- readUserName2 = MaybeT $ do
+--     (maybeOldUser, _, _) <- ask
+--     case maybeOldUser of
+--         Just str -> return str
+--         Nothing -> do
+--             -- lift allows normal IO functions from inside ReaderT Env IO!
+--             input <- lift getLine
+--             if length input > 5
+--             then return (Just input)
+--             else return Nothing
