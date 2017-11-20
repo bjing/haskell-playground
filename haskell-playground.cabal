@@ -16,37 +16,21 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Lib
-                     , PostgresMigrationTest
-                     , PostgresTest
-                    --  , PersistentTest
-                     , ValidationTest
-                     , Model
-                     , StateTest
-                     , StateTTest
                      , CountEntries
+                    --  , PostgresMigrationTest
+                    --  , PostgresTest
+                    --  , PersistentTest
+                    --  , ValidationTest
+                    --  , Model
+                    --  , StateTest
+                    --  , StateTTest
   build-depends:       base >= 4.7 && < 5
                      , text
                      , bytestring
                      , aeson
-                     , conduit
                      , lens
-                     , unordered-containers
-                     , amazonka-dynamodb
-                     , amazonka
                      , mtl
                      , transformers
-                     , postgresql-simple
-                     , postgresql-simple-migration
-                     , persistent
-                     , persistent-postgresql
-                     , persistent-template
-                     , resource-pool
-                     , monad-logger
-                     , wai-extra
-                     , scotty
-                     , validation
-                     , transformers
-                     , random
                      , filepath
   default-language:    Haskell2010
 
@@ -59,9 +43,6 @@ executable haskell-playground-exe
                      , aeson
                      , text
                      , bytestring
-                     , http-conduit
-                     , amazonka-dynamodb
-                     , amazonka-core
                      , directory
   default-language:    Haskell2010
 
