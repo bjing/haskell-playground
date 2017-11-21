@@ -1,29 +1,135 @@
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+-- {-# LANGUAGE DuplicateRecordFields #-}
+
 module DynamoSimpleTest where
 
-data Test = Test {
-  category :: T.Text
-, user     :: T.Text
-, subject  :: T.Text
-, replies  :: Int
-} deriving (Show)
--- Generate instances and category', user' etc. variables for queries/updates
-mkTableDefs "migrate" (tableConfig "" (''Test, WithRange) [] [])
+import           Control.Exception.Safe   (catchAny)
+import           Control.Lens             (set, (.~))
+import           Control.Monad            (forM_)
+import           Control.Monad.IO.Class   (MonadIO, liftIO)
+import           Data.Bool                (bool)
+import           Data.Function            ((&))
+import           Data.Conduit             (runConduit, (=$=))
+import qualified Data.Conduit.List        as CL
+import           Data.Monoid              ((<>))
+import           Data.Proxy
+import qualified Data.Set                 as Set
+import           Data.Tagged
+import qualified Data.Text                as T
+import qualified Data.Text.IO             as T
+import           Data.Time.Clock          (NominalDiffTime, addUTCTime,
+                                           getCurrentTime)
+import           Data.UUID.V4             (nextRandom)
+import           Network.AWS
+import           Network.AWS.DynamoDB     (dynamoDB)
+import           System.Environment       (setEnv)
+import           System.IO                (stdout)
 
-test :: IO ()
-test = do
-  lgr <- newLogger Info stdout
+import           Database.DynamoDB
+import           Database.DynamoDB.Filter
+import           Database.DynamoDB.Update
+
+import           Schema
+
+dynamoTest :: IO ()
+dynamoTest = do
+  -- We don't need this for accessing local dynamodb instance, but newEnv complains if the environment is not set
   setEnv "AWS_ACCESS_KEY_ID" "XXXXXXXXXXXXXX"
   setEnv "AWS_SECRET_ACCESS_KEY" "XXXXXXXXXXXXXXfdjdsfjdsfjdskldfs+kl"
+
+  lgr  <- newLogger Info stdout
   env  <- newEnv Discover
   let dynamo = setEndpoint False "localhost" 8000 dynamoDB
-  let newenv = env & configure dynamo & set envLogger lgr
+  let newenv = env & configure dynamo
+                   & set envLogger lgr
   runResourceT $ runAWS newenv $ do
-      migrate mempty Nothing -- Create tables, indices etc.
-      --
-      putItem (Test "news" "john" "test" 20)
-      --
-      item <- getItem Eventually tTest ("news", "john")
-      liftIO $ print item
-      --
-      items <- scanCond tTest (replies' >. 15) 10
-      liftIO $ print items
+      -- Delete table
+      deleteTable (Proxy :: Proxy Article) `catchAny` (\_ -> return ())
+      -- Create table; provisionedThroughput for indexes is some low default
+      migrateTables mempty Nothing
+
+      withLog "Loading data" $
+        genArticles >>= putItemBatch
+
+      withLog "Querying published news articles" $ do
+        items <- querySimple iArticleIndex (Tagged "News") Nothing Backward 5
+        forM_ items (liftIO . print)
+
+      withLog "Querying published news articles with red tag" $ do
+        items <- queryCond iArticleIndex (Tagged "News") Nothing (artTags' `setContains` Red) Backward 5
+        forM_ items (liftIO . print)
+
+      withLog "Querying published news articles from Bill Clinton" $ do
+        let condition = artAuthor' <.> autFirstName' ==. "Bill" &&. artAuthor' <.> autLastName' ==. "Clinton"
+        items <- queryCond iArticleIndex (Tagged "News") Nothing condition Backward 10
+        forM_ items (liftIO . print)
+
+      -- Scan with condition
+      withLog "Simple scan unpublished articles" $ do
+        items <- scanCond tArticle (artPublished' ==. Nothing) 10
+        forM_ items (liftIO . print)
+
+      -- Update
+      withLog "Change field in a nested structure with Maybe" $ do
+        -- get some article
+        [item] <- scanCond tArticle (artCoauthor' /=. Nothing) 1
+        logmsg $ "Before update: " <> T.pack (show item)
+        newitem <- updateItemByKey tArticle (tableKey item) (artCoauthor' <.> autGender' =. Female)
+        logmsg $ "After update: " <> T.pack (show newitem)
+
+      -- Query over index
+      withLog "Querying published news articles over index - fetches from main table" $ do
+        let opts = queryOpts (Tagged "News") & qFilterCondition .~ Just (artTags' `setContains` Red)
+        runConduit $
+          queryOverIndex iArticleIndex opts =$= CL.isolate 5 =$= CL.mapM_ (liftIO . print)
+
+logmsg :: MonadIO m => T.Text -> m ()
+logmsg = liftIO . T.putStrLn
+
+genArticles :: forall m. MonadIO m => m [Article]
+genArticles = do
+    authuuid1 <- Tagged <$> liftIO nextRandom
+    authuuid2 <- Tagged <$> liftIO nextRandom
+    authuuid3 <- Tagged <$> liftIO nextRandom
+    let author1 = Author authuuid1 "John" "Doe" Male
+        author2 = Author authuuid2 "Bill" "Clinton" Male
+        author3 = Author authuuid3 "Barack" "Obama" Male
+        acount = 1000 :: Int
+    news <- mapM mkNews $ zip3 (cycle [author1, author2, author3])
+                               (cycle [Just author3, Nothing, Just author2, Nothing, Just author1])
+                                (zip [1..acount] (cycle [Set.singleton Red, Set.singleton Blue,
+                                                        Set.fromList [Red, Green], Set.fromList [Red, Green, Blue]]))
+
+
+    comedy <- mapM mkComedy $ zip3 (cycle [author1, author2, author3])
+                               (cycle [Just author3, Nothing, Just author2, Nothing, Just author1])
+                                (zip [1..acount] (cycle [Set.empty, Set.singleton Green,
+                                                        Set.fromList [Blue, Green], Set.fromList [Red, Green, Blue]]))
+
+    return $ news ++ comedy
+  where
+    mkNews (author, coauthor, (i, tags)) =
+      mkArticle author coauthor ("News title " <> T.pack (show i))
+                (Tagged "News") tags (bool (Just $ fromIntegral (-i)) Nothing (odd i))
+    mkComedy (author, coauthor, (i, tags)) =
+      mkArticle author coauthor ("Comedy title " <> T.pack (show i))
+                (Tagged "Comedy") tags (bool (Just $ fromIntegral (-i)) Nothing (even i))
+
+    day :: NominalDiffTime
+    day = 24 * 3600
+    mkArticle :: Author -> Maybe Author -> T.Text -> Category -> Set.Set Tag -> Maybe NominalDiffTime-> m Article
+    mkArticle author coauthor title category tags mdays = do
+      now <- liftIO getCurrentTime
+      artuuid <- Tagged <$> liftIO nextRandom
+      let published = (\days -> (day * days) `addUTCTime` now) <$> mdays
+      return $ Article artuuid title category published (autUuid author) author coauthor tags
+
+withLog :: MonadIO m => T.Text -> m () -> m ()
+withLog msg code = do
+  logmsg "---------------------------------------"
+  logmsg msg
+  logmsg "---------------------------------------"
+  code
+  logmsg ""
