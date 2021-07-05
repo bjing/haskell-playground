@@ -1,6 +1,6 @@
 module ValidationTest where
 
-import Control.Applicative
+import Control.Applicative()
 import Control.Lens
 import Data.List (isInfixOf)
 import Data.Validation
